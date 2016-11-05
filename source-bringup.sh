@@ -14,6 +14,23 @@
 # limitations under the License.
 #
 
+# Hardcode the name of the rom here
+# This is only used when pushing merges to Github
+# See function push
+custom_rom="CandyRoms"
+
+# This is the array of upstream repos we track
+upstream=()
+
+# This is the array of repos to blacklist and not merge
+# Add or remove repos as you see fit
+blacklist=('manifest' 'prebuilt' 'packages/apps/DeskClock')
+
+# Colors
+COLOR_RED='\033[0;31m'
+COLOR_BLANK='\033[0m'
+COLOR_GREEN='\033[0;32m'
+
 export USAGE=(
   "USAGE: source-bringup.sh [-s | --source] [-b | --branch] [-m | --merge]"
   "                         [-p | --push] [-u | --username] [-g | --gerrit]"
@@ -22,7 +39,9 @@ export USAGE=(
   "Defining each option:"
   "   -s | --source (Target AOSP or CAF [AOSP is default])"
   ""
-  "   -b | --branch (The branch from AOSP or CAF that we are merging)"
+  "   -t | --tag (The tag from AOSP or CAF that we are merging)"
+  ""
+  "   -b | --branch (The branch you are targeting from your repos - required)"
   ""
   "   -m | --merge (Merge the specified branch - [optional <No arg required>])"
   ""
@@ -36,12 +55,12 @@ export USAGE=(
   "   -P | --port (Which port Gerrit SSH listens on - [29418 is default])"
   ""
   "These are common commands used in various situations:"
-  "   source-bringup.sh -s aosp -b android-6.0.1_61 -m"
-  "   source-bringup.sh --source caf --branch LA.BF64.1.2.2_rb4.44 --merge"
-  "   source-bringup.sh -b android-6.0.1_r61 -m -s"
-  "   source-bringup.sh -u <Gerrit Username> -g <Gerrit URL> -P 29418 -p"
-  "   source-bringup.sh --username <Gerrit Username> --gerrit <Gerrit URL> --port 29418 --push"
-  "   source-bringup.sh -u <Gerrit Username> -p -g -p"
+  "   source-bringup.sh -s aosp -b c6 -t android-6.0.1_61 -m"
+  "   source-bringup.sh --source caf --branch c6 --tag LA.BF64.1.2.2_rb4.44 --merge"
+  "   source-bringup.sh -b c6 -t android-6.0.1_r61 -m -s"
+  "   source-bringup.sh -u <Gerrit Username> -g <Gerrit URL> -P 29418 -b c6 -p"
+  "   source-bringup.sh --username <Gerrit Username> --gerrit <Gerrit URL> --port 29418 --branch c6 --push"
+  "   source-bringup.sh -u <Gerrit Username> -b c6 -p -g -p"
 )
 
 function call_usage () {
@@ -70,9 +89,9 @@ function get_repos() {
   # Since their projects are listed, we can grep for them
   for i in ${repos[@]}
   do
-    if grep -q "$i" /tmp/rebase.tmp; then # If Google/CAF has it and
-      if grep -q "$i" ./.repo/manifest.xml; then # If we have it in our manifest and
-        if grep "$i" ./.repo/manifest.xml | grep -q "remote="; then # If we track our own copy of it
+    if grep -qw "$i" /tmp/rebase.tmp; then # If Google/CAF has it and
+      if grep -qw "$i" ./.repo/manifest.xml; then # If we have it in our manifest and
+        if grep -w "$i" ./.repo/manifest.xml | grep -qe "revision=\"$BRANCH\""; then # If we track our own copy of it
           if ! is_in_blacklist $i; then # If it's not in our blacklist
             upstream+=("$i") # Then we need to update it
             echo $i >> aosp-list
@@ -80,12 +99,15 @@ function get_repos() {
             echo "================================================"
             echo " "
             echo "$i is in blacklist"
-            echo " "
           fi
         fi
       fi
     fi
   done
+  echo " "
+  echo "I have found a total of ${#upstream[@]} repositories being tracked"
+  echo "that will be checked for $TAG and merged if applicable."
+  echo " "
   rm /tmp/rebase.tmp
 }
 
@@ -108,7 +130,7 @@ function force_sync() {
 
   echo "Repo Syncing........."
   sleep 10
-  repo sync --force-sync >> /dev/null
+  repo sync --force-sync >/dev/null 2>&1; # Silence!
   if [ $? -eq 0 ]; then
     echo "Repo Sync success"
   else
@@ -120,7 +142,7 @@ function force_sync() {
 function print_result() {
   if [ ${#failed[@]} -eq 0 ]; then
     echo " "
-    echo "========== "$BRANCH" is merged sucessfully =========="
+    echo "========== "$TAG" is merged sucessfully =========="
     echo "========= Compile and test before pushing to github ========="
     echo " "
   else
@@ -137,7 +159,7 @@ function print_result() {
 function merge() {
   while read path; do
 
-    project=`echo android_${path} | sed -e 's/\//\_/g'`
+    project=`echo ${path} | sed -e 's/\//\_/g'`
 
     echo " "
     echo "====================================================================="
@@ -147,39 +169,61 @@ function merge() {
 
     cd $path;
 
-    git merge --abort;
+    git merge --abort >/dev/null 2>&1; # Silence!
 
     repo sync -d .
 
     if [ "$aosp" = "1" ]; then
-      if git branch | grep "android-aosp-6.0.1-merge" > /dev/null; then
-        git branch -D android-aosp-6.0.1-merge > /dev/null
-        repo start android-aosp-6.0.1-merge .
+      if git branch | grep "android-aosp-merge" > /dev/null; then
+        echo -e $COLOR_GREEN
+        echo "Deleting branch android-aosp-merge"
+        git branch -D android-aosp-merge > /dev/null
+        echo "Recreating branch android-aosp-merge"
+        repo start android-aosp-merge .
+        echo -e $COLOR_BLANK
+      else
+        echo -e $COLOR_GREEN
+        echo "Creating branch android-aosp-merge"
+        repo start android-aosp-merge .
+        echo -e $COLOR_BLANK
       fi
     fi
     if [ "$aosp" = "1" ]; then
       if ! git remote | grep "aosp" > /dev/null; then
         git remote add aosp https://android.googlesource.com/platform/$path > /dev/null
         git fetch --tags aosp
+      else
+        git fetch --tags aosp
       fi
     fi
     if [ "$caf" = "1" ]; then
-      if git branch | grep "android-caf-6.0.1-merge" > /dev/null; then
-        git branch -D android-caf-6.0.1-merge > /dev/null
-        repo start android-caf-6.0.1-merge .
+      if git branch | grep "android-caf-merge" > /dev/null; then
+        echo -e $COLOR_GREEN
+        echo "Deleting branch android-caf-merge"
+        git branch -D android-caf-merge > /dev/null
+        echo "Recreating branch android-caf-merge"
+        repo start android-caf-merge .
+        echo $COLOR_BLANK
+      else
+        echo -e $COLOR_GREEN
+        echo "Creating branch android-caf-merge"
+        repo start android-caf-merge .
+        echo -e $COLOR_BLANK
       fi
     fi
     if [ "$caf" = "1" ]; then
       if ! git remote | grep "caf" > /dev/null; then
         git remote add caf https://source.codeaurora.org/quic/la/platform/$path > /dev/null
         git fetch --tags caf
+      else
+        git fetch --tags caf
       fi
     fi
 
     if [ "$aosp" = "1" ]; then
-      git merge $BRANCH;
+      git merge $TAG;
     else
-      git merge caf/$BRANCH;
+      git merge caf/$TAG;
     fi
 
     if [ $? -ne 0 ]; then # If merge failed
@@ -206,15 +250,13 @@ function push () {
 
     echo " Pushing..."
 
-    git push --no-thin ssh://${USERNAME}@${GERRIT}:${PORT}/${project} HEAD:refs/heads/c6l
-    CANDYBRANCH="c6l"
+    git push --no-thin ssh://${USERNAME}@${GERRIT}:${PORT}/${custom_rom}/${project} HEAD:refs/heads/${BRANCH} >/dev/null 2>&1; # Silence!
     if [ $? -ne 0 ]; then # If merge failed
       echo " "
-      git push --no-thin ssh://${USERNAME}@${GERRIT}:${PORT}/${project} HEAD:refs/heads/c6
-      CANDYBRANCH="c6"
+      echo "Failed to push ${project} to HEAD:refs/heads/${BRANCH}"
+    else
+      echo " Success!"
     fi
-    echo "git push --no-thin ssh://${USERNAME}@${GERRIT}:${PORT}/${project} HEAD:refs/heads/${CANDYBRANCH}"
-    echo " "
 
     cd - > /dev/null
 
@@ -224,6 +266,7 @@ function push () {
 # Let's parse the users commands so that their order is not required
 # Then store the following commands in variables
 # If there is an issue with any commands then we can abort
+# This method isn't perfect but it works - for now
 if [ "$#" -eq 0 ];then
   echo " "
   call_usage
@@ -240,6 +283,7 @@ while [ $pointer -le $# ]; do
     slice_len=1
     case $param in
       -s*|--source) SOURCE=${!pointer_plus:-AOSP}; ((slice_len++));;
+      -t*|--tag) TAG=${!pointer_plus}; ((slice_len++));;
       -b*|--branch) BRANCH=${!pointer_plus}; ((slice_len++));;
       -m*|--merge) MERGE="merge";;
       -p*|--push) PUSH="push";;
@@ -254,17 +298,6 @@ while [ $pointer -le $# ]; do
       || set -- ${@:((pointer + $slice_len)):$#};
   fi
 done
-
-# This is the array of upstream repos we track
-upstream=()
-
-# This is the array of repos to blacklist and not merge
-# Add or remove repos as you see fit
-blacklist=('manifest' 'prebuilt' 'packages/apps/DeskClock')
-
-# Colors
-COLOR_RED='\033[0;31m'
-COLOR_BLANK='\033[0m'
 
 case "${SOURCE}" in
   # Google source
