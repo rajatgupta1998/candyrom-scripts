@@ -99,7 +99,7 @@ function force_sync() {
 
   echo "Repo Syncing........."
   sleep 10
-  repo sync --force-sync >/dev/null 2>&1; # Silence!
+  repo sync -c --force-sync >/dev/null 2>&1; # Silence!
   if [ $? -eq 0 ]; then
     echo "Repo Sync success"
   else
