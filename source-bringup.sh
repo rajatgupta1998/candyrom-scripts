@@ -14,6 +14,13 @@
 # limitations under the License.
 #
 
+#  "These are common commands used in various situations:"
+#  "   source-bringup.sh -s aosp -b c6 -t android-6.0.1_61 -m"
+#  "   source-bringup.sh -s caf -b c6 -t LA.BF64.1.2.2_rb4.44 -m"
+#  "   source-bringup.sh -b c6 -t android-6.0.1_r61 -m -s"
+#  "   source-bringup.sh -u <Gerrit Username> -g <Gerrit URL> -r 29418 -b c6 -p"
+#  "   source-bringup.sh -u <Gerrit Username> -b c6 -p -g -r"
+
 # Hardcode the name of the rom here
 # This is only used when pushing merges to Github
 # See function push
@@ -30,44 +37,6 @@ blacklist=('manifest' 'prebuilt' 'packages/apps/DeskClock')
 COLOR_RED='\033[0;31m'
 COLOR_BLANK='\033[0m'
 COLOR_GREEN='\033[0;32m'
-
-export USAGE=(
-  "USAGE: source-bringup.sh [-s | --source] [-b | --branch] [-m | --merge]"
-  "                         [-p | --push] [-u | --username] [-g | --gerrit]"
-  "                         [-P | --port]"
-  ""
-  "Defining each option:"
-  "   -s | --source (Target AOSP or CAF [AOSP is default])"
-  ""
-  "   -t | --tag (The tag from AOSP or CAF that we are merging)"
-  ""
-  "   -b | --branch (The branch you are targeting from your repos - required)"
-  ""
-  "   -m | --merge (Merge the specified branch - [optional <No arg required>])"
-  ""
-  "   -p | --push (Push git history to Github - [optional <No arg required>])"
-  ""
-  "   -u | --username (Your username on Gerrit)"
-  ""
-  "   -g | --gerrit (URL Gerrit instance which we are pushing to [Candy Gerrit is default])"
-  "                 (Changes pushed to Gerrit will be sent to Github)"
-  ""
-  "   -P | --port (Which port Gerrit SSH listens on - [29418 is default])"
-  ""
-  "These are common commands used in various situations:"
-  "   source-bringup.sh -s aosp -b c6 -t android-6.0.1_61 -m"
-  "   source-bringup.sh --source caf --branch c6 --tag LA.BF64.1.2.2_rb4.44 --merge"
-  "   source-bringup.sh -b c6 -t android-6.0.1_r61 -m -s"
-  "   source-bringup.sh -u <Gerrit Username> -g <Gerrit URL> -P 29418 -b c6 -p"
-  "   source-bringup.sh --username <Gerrit Username> --gerrit <Gerrit URL> --port 29418 --branch c6 --push"
-  "   source-bringup.sh -u <Gerrit Username> -b c6 -p -g -p"
-)
-
-function call_usage () {
-  for c in ${!USAGE[*]}; do
-    echo -e "- ${USAGE[$c]}"
-  done
-}
 
 function is_in_blacklist() {
   for j in ${blacklist[@]}
@@ -263,41 +232,44 @@ function push () {
   done < aosp-list
 }
 
-# Let's parse the users commands so that their order is not required
-# Then store the following commands in variables
-# If there is an issue with any commands then we can abort
-# This method isn't perfect but it works - for now
-if [ "$#" -eq 0 ];then
-  echo " "
-  call_usage
+# Let's parse the users commands so that their order is not required.
+# Credits to Noah Hoffman for making it possible to use Python's argparse module in shell scripts.
+# See, https://github.com/nhoffman/argparse-bash, for more details.
+# Python 2.6+ or 3.2+ is required for this to work.
+# TODO: Rewrite this entire script in Python.
+
+source $(dirname $0)/Scripts/argparse.bash || exit 1
+argparse "$@" <<EOF || exit 1
+parser.add_argument('-s', dest='source', help='Target AOSP or CAF [AOSP is default]', nargs='?', const="aosp",
+                    default="aosp")
+parser.add_argument('-t', dest='tag', help='The tag from AOSP or CAF that we are merging')
+parser.add_argument('-b', dest='branch', help='Your default branch', required=True)
+parser.add_argument('-u', dest='username', help='Your username on Gerrit')
+parser.add_argument('-g', dest='gerrit', help='URL Gerrit '
+                    '[gerrit.bbqdroid.org is default]', nargs='?', const="gerrit.bbqdroid.org",
+                    default="gerrit.bbqdroid.org")
+parser.add_argument('-r', dest='port', help='Which port SSH listens on for Gerrit '
+                    '[29418 is default]', nargs='?', const="29418", default="29418")
+parser.add_argument('-m', dest='merge', help='Merge the specified tag '
+                    '[No arg required]', nargs='?', const="merge")
+parser.add_argument('-p', dest='push', help='Push merge to Github through Gerrit '
+                    '[No arg required]', nargs='?', const="push")
+
+EOF
+
+if [ -z $USERNAME ] && [ -n $PUSH ]; then
+  echo ""
+  echo "source-bringup.sh: error: argument -u is required"
+  echo ""
   exit 0
 fi
 
-pointer=1
-while [ $pointer -le $# ]; do
-  param=${!pointer}
-  if [[ $param != "-"* ]]; then ((pointer++)) # not a parameter flag so advance pointer
-  else
-    param=${!pointer}
-    ((pointer_plus = pointer + 1))
-    slice_len=1
-    case $param in
-      -s*|--source) SOURCE=${!pointer_plus:-AOSP}; ((slice_len++));;
-      -t*|--tag) TAG=${!pointer_plus}; ((slice_len++));;
-      -b*|--branch) BRANCH=${!pointer_plus}; ((slice_len++));;
-      -m*|--merge) MERGE="merge";;
-      -p*|--push) PUSH="push";;
-      -u*|--username) USERNAME=${!pointer_plus}; ((slice_len++));;
-      -g*|--gerrit) GERRIT=${!pointer_plus:-gerrit.bbqdroid.org}; ((slice_len++));;
-      -P*|--port) PORT=${!pointer_plus:-29418}; ((slice_len++));;
-      *) echo Unknown option: $param >&2; echo " "; sleep 1; call_usage; exit 0;;
-    esac
-    # splice out pointer frame from positional list
-    [[ $pointer -gt 1 ]] \
-      && set -- ${@:1:((pointer - 1))} ${@:((pointer + $slice_len)):$#} \
-      || set -- ${@:((pointer + $slice_len)):$#};
-  fi
-done
+if [ -z $TAG ] && [ -n $MERGE ]; then
+  echo ""
+  echo "source-bringup.sh: error: argument -t is required"
+  echo ""
+  exit 0
+fi
 
 case "${SOURCE}" in
   # Google source
@@ -305,7 +277,7 @@ case "${SOURCE}" in
   # Code Aurora source
   [cC][aA][fF]) REPO=https://source.codeaurora.org/quic/la/platform/; aosp=0; caf=1; get_repos ;;
   # Wrong entry, try again
-  *) echo " "; echo "Did you mean AOSP or CAF? I am confused!"; sleep 1; echo " "; call_usage ;;
+  *) echo " "; echo "Did you mean AOSP or CAF? I am confused!"; sleep 1 ;;
 esac
 
 if [[ $MERGE =~ ^([mM][eE][rR][gG][eE])$ ]]; then
