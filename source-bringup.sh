@@ -208,7 +208,7 @@ function push () {
   while read path;
     do
 
-    project=`echo android_${path} | sed -e 's/\//\_/g'`
+    project=`echo ${path} | sed -e 's/\//\_/g'`
 
     echo ""
     echo "====================================================================="
