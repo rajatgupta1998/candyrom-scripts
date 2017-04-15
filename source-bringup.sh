@@ -18,7 +18,7 @@
 #  "   source-bringup.sh -s aosp -b c6 -t android-6.0.1_61 -m"
 #  "   source-bringup.sh -s caf -b c6 -t LA.BF64.1.2.2_rb4.44 -m"
 #  "   source-bringup.sh -b c6 -t android-6.0.1_r61 -m -s"
-#  "   source-bringup.sh -u <Gerrit Username> -g <Gerrit URL> -r 29418 -b c6 -p"
+#  "   source-bringup.sh -u <Gerrit Username> -g <Gerrit URL> -P 29418 -b c6 -p"
 #  "   source-bringup.sh -u <Gerrit Username> -b c6 -p -g -r"
 
 # Hardcode the name of the rom here
@@ -60,7 +60,7 @@ function get_repos() {
   do
     if grep -qw "$i" /tmp/rebase.tmp; then # If Google/CAF has it and
       if grep -qw "$i" ./.repo/manifest.xml; then # If we have it in our manifest and
-        if grep -w "$i" ./.repo/manifest.xml | grep -qe "revision=\"$BRANCH\""; then # If we track our own copy of it
+        if grep -w "$i" ./.repo/manifest.xml | grep -qe "remote=\"$REMOTE\""; then # If we track our own copy of it
           if ! is_in_blacklist $i; then # If it's not in our blacklist
             upstream+=("$i") # Then we need to update it
             echo $i >> aosp-list
@@ -243,12 +243,13 @@ argparse "$@" <<EOF || exit 1
 parser.add_argument('-s', dest='source', help='Target AOSP or CAF [AOSP is default]', nargs='?', const="aosp",
                     default="aosp")
 parser.add_argument('-t', dest='tag', help='The tag from AOSP or CAF that we are merging')
-parser.add_argument('-b', dest='branch', help='Your default branch', required=True)
+parser.add_argument('-b', dest='branch', help='Your default branch name', required=True)
+parser.add_argument('-r', dest='remote', help='Your default remote name', required=True)
 parser.add_argument('-u', dest='username', help='Your username on Gerrit')
 parser.add_argument('-g', dest='gerrit', help='URL Gerrit '
                     '[gerrit.bbqdroid.org is default]', nargs='?', const="gerrit.bbqdroid.org",
                     default="gerrit.bbqdroid.org")
-parser.add_argument('-r', dest='port', help='Which port SSH listens on for Gerrit '
+parser.add_argument('-P', dest='port', help='Which port SSH listens on for Gerrit '
                     '[29418 is default]', nargs='?', const="29418", default="29418")
 parser.add_argument('-m', dest='merge', help='Merge the specified tag '
                     '[No arg required]', nargs='?', const="merge")
@@ -256,6 +257,13 @@ parser.add_argument('-p', dest='push', help='Push merge to Github through Gerrit
                     '[No arg required]', nargs='?', const="push")
 
 EOF
+
+if [ -z $REMOTE ] && [ -n $MERGE ]; then
+  echo ""
+  echo "source-bringup.sh: error: argument -r is required"
+  echo ""
+  exit 0
+fi
 
 if [ -z $USERNAME ] && [ -n $PUSH ]; then
   echo ""
@@ -290,3 +298,4 @@ fi
 if [[ $PUSH =~ ^([pP][uU][sS][hH])$ ]]; then
   push # Push latest changes through gerrit straight to github
 fi
+
