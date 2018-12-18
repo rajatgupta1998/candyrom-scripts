@@ -59,8 +59,8 @@ function get_repos() {
   for i in ${repos[@]}
   do
     if grep -qw "$i" /tmp/rebase.tmp; then # If Google/CAF has it and
-      if grep -qw "$i" ./.repo/manifest.xml; then # If we have it in our manifest and
-        if grep -w "$i" ./.repo/manifest.xml | grep -qe "remote=\"$REMOTE\""; then # If we track our own copy of it
+      if grep -qw "$i" ./.repo/manifests/candy.xml; then # If we have it in our manifest and
+        if grep -w "$i" ./.repo/manifests/candy.xml | grep -qe "remote=\"$REMOTE\""; then # If we track our own copy of it
           if ! is_in_blacklist $i; then # If it's not in our blacklist
             upstream+=("$i") # Then we need to update it
             echo $i >> aosp-list
@@ -238,7 +238,7 @@ function push () {
 # Python 2.6+ or 3.2+ is required for this to work.
 # TODO: Rewrite this entire script in Python.
 
-source $(dirname $0)/Scripts/argparse.bash || exit 1
+source $(dirname $0)/scripts/argparse.bash || exit 1
 argparse "$@" <<EOF || exit 1
 parser.add_argument('-s', dest='source', help='Target AOSP or CAF [AOSP is default]', nargs='?', const="aosp",
                     default="aosp")
